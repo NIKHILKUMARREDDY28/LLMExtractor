@@ -1,6 +1,7 @@
 import io
 import json
 import os
+import traceback
 from typing import List
 
 
@@ -10,6 +11,7 @@ from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel
 import pandas as pd
 
+from app.logger import app_logger as logger
 from app.utils import DocxReader, PdfReader, OpenAIClient
 from app.config import settings
 
@@ -27,13 +29,14 @@ FILE_TYPE_TO_EXTRACTOR = {
 }
 
 
-def get_extractor(file: UploadFile):
+async def get_extractor(file: UploadFile):
     """
     Detect file type by extension and return the appropriate extractor class.
     """
     filename = file.filename.lower()
     _, ext = os.path.splitext(filename)
     if ext not in FILE_TYPE_TO_EXTRACTOR:
+        await logger.error(f"Unsupported file type: {ext}")
         raise ValueError(f"Unsupported file type: {ext}")
     return FILE_TYPE_TO_EXTRACTOR[ext]
 
@@ -61,7 +64,7 @@ async def extract_criteria_endpoint(file: UploadFile = File(...)):
     ```
     """
     try:
-        extractor_class = get_extractor(file)
+        extractor_class = await get_extractor(file)
         tmp_path = f"/tmp/{file.filename}"
         with open(tmp_path, "wb") as f:
             f.write(file.file.read())
@@ -99,6 +102,7 @@ async def score_resumes_endpoint(
         # Parse the criteria from the JSON-formatted string
         criteria_list = json.loads(criteria)
     except Exception as e:
+        await logger.error(f"Invalid criteria format: {str(e)}")
         return JSONResponse(
             status_code=400,
             content={"error": "Invalid criteria format. Must be a JSON list of strings."},
@@ -108,7 +112,7 @@ async def score_resumes_endpoint(
     candidate_names = []
     for file in files:
         try:
-            extractor_class = get_extractor(file)
+            extractor_class = await get_extractor(file)
             tmp_path = f"/tmp/{file.filename}"
             with open(tmp_path, "wb") as f:
                 f.write(file.file.read())
@@ -119,12 +123,14 @@ async def score_resumes_endpoint(
             candidate_name = os.path.splitext(file.filename)[0]
             candidate_names.append(candidate_name)
         except Exception as e:
+            await logger.error(f"Error processing file {file.filename}: {str(e)}")
             return JSONResponse(status_code=400, content={"error": f"Error processing file {file.filename}: {str(e)}"})
 
     try:
         # Score all resumes using the LLM client
         score_responses = LLM_CLIENT.score_multiple_resumes_against_criteria(criteria_list, resumes_base64)
     except Exception as e:
+        await logger.error(f"Error scoring resumes: {traceback.format_exc()}")
         return JSONResponse(status_code=400, content={"error": f"Error scoring resumes: {str(e)}"})
 
     # Build the results list for CSV output.

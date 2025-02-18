@@ -1,5 +1,6 @@
 import os
 import base64
+import subprocess
 import tempfile
 
 from docx2pdf import convert as docx2pdf_convert
@@ -34,6 +35,7 @@ class PdfReader:
         return base64_images
 
 
+
 class DocxReader:
     def __init__(self, docx_path: str):
         self.docx_path = docx_path
@@ -41,8 +43,16 @@ class DocxReader:
     def convert_to_images(self) -> list[Image.Image]:
         """Convert DOCX pages to images by first converting DOCX to PDF then to images."""
         with tempfile.TemporaryDirectory() as tmp_dir_name:
-            pdf_output_path = os.path.join(tmp_dir_name, "converted.pdf")
-            docx2pdf_convert(self.docx_path, pdf_output_path)
+            # Define output PDF path inside the temporary directory
+            pdf_output_path = os.path.join(tmp_dir_name, os.path.basename(self.docx_path).replace('.docx', '.pdf'))
+
+            self.convert_docx_to_pdf(pdf_output_path)
+
+            # Ensure the PDF file was created successfully
+            if not os.path.exists(pdf_output_path):
+                raise FileNotFoundError(f"PDF file was not created at: {pdf_output_path}")
+
+            # Convert the PDF to images
             images = convert_from_path(pdf_output_path)
         return images
 
@@ -57,6 +67,22 @@ class DocxReader:
             img_base64 = base64.b64encode(img_bytes).decode("utf-8")
             base64_images.append(img_base64)
         return base64_images
+
+    def convert_docx_to_pdf(self, output_pdf_path: str):
+        """Convert DOCX to PDF using LibreOffice in headless mode."""
+        try:
+            result = subprocess.run(
+                ['libreoffice', '--headless', '--convert-to', 'pdf', '--outdir', os.path.dirname(output_pdf_path),
+                 self.docx_path],
+                check=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE
+            )
+            # Log the output of LibreOffice for debugging purposes
+            print(f"LibreOffice output: {result.stdout.decode()}")
+            print(f"LibreOffice error (if any): {result.stderr.decode()}")
+        except subprocess.CalledProcessError as e:
+            raise Exception(f"Error converting DOCX to PDF: {e.stderr.decode()}")
 
 
 class ExtractionResponse(BaseModel):
@@ -174,7 +200,7 @@ class OpenAIClient:
         """
         # Format the criteria list for inclusion in the prompt.
         criteria_list = "\n".join(f"- {criterion}" for criterion in criteria)
-        prompt = SCORE_RESUME_PROMPT.format(criteria_list=criteria_list)
+        prompt = SCORE_RESUME_PROMPT.replace("{criteria_list}",criteria_list)
 
         response = self.patched_client.chat.completions.create(
             model="gpt-4o",

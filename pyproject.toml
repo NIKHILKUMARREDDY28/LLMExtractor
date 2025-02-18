@@ -16,7 +16,8 @@ dependencies = [
     "docx2pdf (>=0.1.8,<0.2.0)",
     "instructor (>=1.7.2,<2.0.0)",
     "pandas (>=2.2.3,<3.0.0)",
-    "python-dotenv (>=1.0.1,<2.0.0)"
+    "python-dotenv (>=1.0.1,<2.0.0)",
+    "loguru (>=0.7.3,<0.8.0)"
 ]
 
 
