@@ -1,9 +1,11 @@
 import io
 import json
 import os
+import sys
 import traceback
 from typing import List
 
+sys.path.append(os.getcwd())
 
 import openai
 from fastapi import FastAPI, File, Form, UploadFile
