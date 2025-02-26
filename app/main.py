@@ -160,6 +160,45 @@ async def score_resumes_endpoint(
     )
 
 
+
+@app.post("/enhance-resumes", summary="Provide suggestions to improve resumes")
+async def score_resumes_endpoint(
+    criteria: str = Form(...),
+    files: List[UploadFile] = File(...)
+):
+
+    criteria_list = json.loads(criteria)
+
+    resumes_base64 = []
+    candidate_names = []
+    for file in files:
+        try:
+            extractor_class = await get_extractor(file)
+            tmp_path = f"/tmp/{file.filename}"
+            with open(tmp_path, "wb") as f:
+                f.write(file.file.read())
+            extractor = extractor_class(tmp_path)
+            base64_images = extractor.convert_to_base64()
+            resumes_base64.append(base64_images)
+            # Extract candidate name from filename (remove extension)
+            candidate_name = os.path.splitext(file.filename)[0]
+            candidate_names.append(candidate_name)
+        except Exception as e:
+            await logger.error(f"Error processing file {file.filename}: {str(e)}")
+            return JSONResponse(status_code=400, content={"error": f"Error processing file {file.filename}: {str(e)}"})
+    try:
+        # Enhance all resumes using the LLM client
+        enhance_responses = LLM_CLIENT.get_suggestions_for_multiple_resumes(criteria_list, resumes_base64)
+        return enhance_responses
+
+    except Exception as e:
+        await logger.error(f"Error enhancing resumes: {traceback.format_exc()}")
+        return JSONResponse(status_code=400, content={"error": f"Error enhancing resumes: {str(e)}"})
+
+
+
+
+
 if __name__ == "__main__":
     import uvicorn
 

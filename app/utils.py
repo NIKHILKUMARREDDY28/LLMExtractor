@@ -124,6 +124,14 @@ class ScoreResponse(BaseModel):
     total_score: int = Field(..., description="Total score computed as the sum of individual scores.")
 
 
+
+class EnhancementResponse(BaseModel):
+
+    missing_skills: list[str] = Field(..., description="List of missing skills identified in the resume.")
+    weak_areas: list[dict[str,str]] = Field(..., description="List of weak areas identified in the resume.")
+    format_suggestions: list[str] = Field(..., description="List of format suggestions for the resume.")
+
+
 SCORE_RESUME_PROMPT = """You are an expert resume evaluator.
 Your task is to evaluate the resume provided and score it against the following criteria:
 {criteria_list}
@@ -148,6 +156,63 @@ Your output must be valid JSON and follow exactly this schema:
 
 Do not include any additional commentary or explanations. Begin the evaluation now.
 """
+
+
+RESUME_ENHANCEMENT_SYSTEM_PROMPT = """
+You are a world-class resume enhancement assistant. You will be provided with one or more images of a resume (in base64 format) along with a job description containing specific criteria. Your task is to review the resume thoroughly and provide constructive feedback based on the job description’s criteria.
+
+Your analysis should include:
+1. Identification of skills present in the resume.
+2. Identification of any missing skills that are required per the criteria but absent from the resume.
+3. Identification of any skills that are present but need improvement or further detail, along with actionable suggestions.
+4. Recommendations to enhance the resume's formatting, layout, and overall presentation.
+
+Your output must strictly follow the JSON format below:
+
+{
+  "missing_skills": [
+    <missing skill 1>,
+    <missing skill 2>
+  ],
+  "weak_areas": [
+    {
+      "skill": "<skill>",
+      "suggestion": "<detailed suggestion and constructive feedback>"
+    }
+  ],
+  "format_suggestions": [
+    "<suggestion related to the resume format and presentation>",
+    "<any additional content or formatting enhancements>"
+  ]
+}
+
+For example, if the resume is missing key technical skills or if certain skills could be better highlighted, provide specific and actionable feedback as shown in this sample output:
+
+Example Output:
+{
+  "missing_skills": [
+    "Docker containerization",
+    "Experience with Kubernetes"
+  ],
+  "weak_areas": [
+    {
+      "skill": "Cloud computing",
+      "suggestion": "Add specific AWS or Azure services you've worked with and quantify relevant projects."
+    }
+  ],
+  "format_suggestions": [
+    "Consider adding a skills summary section at the top.",
+    "Quantify achievements with metrics and bullet points."
+  ]
+}
+
+Ensure that the final output is valid JSON.
+"""
+
+
+
+
+
 
 
 class OpenAIClient:
@@ -247,3 +312,49 @@ class OpenAIClient:
             score_results.append(score_response)
         return score_results
 
+    def provide_enhancements_based_on_job_description(self, criteria: list[str], resume_base64: list[str]):
+
+        criteria_list = "\n".join(f"- {criterion}" for criterion in criteria)
+
+
+        prompt = RESUME_ENHANCEMENT_SYSTEM_PROMPT.replace("{criteria_list}", criteria_list)
+
+        response = self.patched_client.chat.completions.create(
+            model="gpt-4o",
+            messages=[
+                {"role": "system", "content": prompt},
+                {
+                    "role": "user",
+                    "content": (
+                            [
+                                {
+                                    "type": "text",
+                                    "text": "Please review the attached resume images and provide a detailed analysis based on the criteria provided above. Your analysis should identify any missing skills, highlight weak areas with actionable improvement suggestions, and offer recommendations to enhance the resume's format and overall presentation. Follow the JSON structure exactly as specified."
+                                }
+                            ]
+                            + [
+                                {
+                                    "type": "image_url",
+                                    "image_url": {"url": f"data:image/jpeg;base64,{base64_image}"}
+                                }
+                                for base64_image in resume_base64
+                            ]
+                    ),
+                },
+            ],
+            response_model=EnhancementResponse,
+            temperature=0.0,
+            max_retries=3,
+            timeout=None,
+        )
+        return response
+
+    def get_suggestions_for_multiple_resumes(self, job_criteria: list[str], resumes: list[list[str]]):
+
+        suggestions_list = []
+
+        for resume in resumes:
+            suggestions = self.provide_enhancements_based_on_job_description(job_criteria, resume)
+            suggestions_list.append(suggestions)
+
+        return suggestions_list
