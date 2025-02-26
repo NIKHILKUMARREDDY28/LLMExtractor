@@ -168,16 +168,22 @@ async def score_resumes_endpoint(
 ):
 
     criteria_list = json.loads(criteria)
-
+    await logger.info(f"Extracted criteria: {criteria_list}")
     resumes_base64 = []
     candidate_names = []
     for file in files:
         try:
+
+            await logger.info(f"Processing file: {file.filename}")
+
             extractor_class = await get_extractor(file)
             tmp_path = f"/tmp/{file.filename}"
             with open(tmp_path, "wb") as f:
                 f.write(file.file.read())
             extractor = extractor_class(tmp_path)
+
+            await logger.info(f"Converting {file.filename} to base64")
+
             base64_images = extractor.convert_to_base64()
             resumes_base64.append(base64_images)
             # Extract candidate name from filename (remove extension)

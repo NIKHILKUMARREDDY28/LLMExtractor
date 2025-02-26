@@ -354,6 +354,7 @@ class OpenAIClient:
         suggestions_list = []
 
         for resume in resumes:
+
             suggestions = self.provide_enhancements_based_on_job_description(job_criteria, resume)
             suggestions_list.append(suggestions)
 
